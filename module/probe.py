@@ -360,8 +360,8 @@ class MultiLayerProbe(ProbeWrapper):
             )
 
         self.norms = nn.ModuleList([
-            norm_class(**norm_kwargs)
-        ] * (self.config.num_hidden_layers + 1))
+            norm_class(**norm_kwargs) for _ in range(self.config.num_hidden_layers + 1)
+        ])
         
         self.pe = self.pretrained_model_components.get_position_embedding_info()(self.config)
         

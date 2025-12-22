@@ -382,7 +382,7 @@ class MultiLayerProbe(ProbeWrapper):
             if probe_idx == 0:
                 hidden_states = self.norms[probe_idx](self.projs[probe_idx](all_hidden_states[base_layer_idx]))
             else:
-                hidden_states += self.norms[probe_idx](self.projs[probe_idx](all_hidden_states[base_layer_idx]))
+                hidden_states = hidden_states + self.norms[probe_idx](self.projs[probe_idx](all_hidden_states[base_layer_idx]))
             
             hidden_states = self.probes[probe_idx](
                 hidden_states,

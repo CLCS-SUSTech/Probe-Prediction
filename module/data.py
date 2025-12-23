@@ -184,6 +184,15 @@ class ProcessorRegistry:
 
 registry = ProcessorRegistry()
 register_processor = registry.register
+def _load_processor_cls():
+    import importlib
+    import pkgutil
+    import module.data_processors
+    package = module.data_processors
+    for _, module_name, _ in pkgutil.iter_modules(package.__path__):
+        importlib.import_module(f"{package.__name__}.{module_name}")
+
+_load_processor_cls()
 
 def load_dataset_processor(name: str, data_dir : str) -> DataProcessor:
     '''

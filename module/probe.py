@@ -413,6 +413,9 @@ class MultiLayerProbe(ProbeWrapper):
         
         for k, v in self.norms[-1].state_dict().items():
             state_dict[f"norms.{self.config.num_hidden_layers}.{k}"] = v
+
+        state_dict["classifier.weight"] = self.classifier.weight
+        state_dict["classifier.bias"] = self.classifier.bias
         
         if safe_serialization:
             from safetensors.torch import save_file
@@ -449,5 +452,6 @@ class MultiLayerProbe(ProbeWrapper):
             self.projs[idx].load_state_dict(extract(f"projs.{idx}"))
             self.norms[idx].load_state_dict(extract(f"norms.{idx}"))
         self.norms[-1].load_state_dict(extract(f"norms.{self.config.num_hidden_layers}"))
+        self.classifier.load_state_dict(extract("classifier"))
         
         logger.info(f"Probe weights loaded from {load_path}")

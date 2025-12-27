@@ -372,7 +372,7 @@ class MultiLayerProbe(ProbeWrapper):
         # explicitly cast to the same dtype as the pretrained model
         target_dtype = next(self.pretrained_model.parameters()).dtype
         self.to(target_dtype)
-        
+
     def probe_forward(self, transformer_outputs: BaseModelOutputWithPast, position_ids, causal_mask, cache_position, *args, **kwargs) -> torch.Tensor:
         all_hidden_states = transformer_outputs.hidden_states
 
@@ -394,7 +394,11 @@ class MultiLayerProbe(ProbeWrapper):
                 cache_position=cache_position,
                 position_embeddings=position_embeddings,
                 **kwargs
-            )[0]
+            )
+
+            # check is tuple for version compatibility
+            if isinstance(hidden_states, tuple):
+                hidden_states = hidden_states[0]
         
         hidden_states = self.norms[-1](hidden_states)
         logits = self.classifier(hidden_states)

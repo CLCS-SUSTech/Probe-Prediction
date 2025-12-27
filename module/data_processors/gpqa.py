@@ -63,8 +63,9 @@ class GPQADataProcessor(DataProcessor):
         
         self.config['name'] = 'gpqa'
         self.config['evaluate_approach'] = 'exact-match'
-    
-    def check_answer(self, model_answer : str, ground_truth : str):
+
+    def _check_answer(self, model_answer : str, ground_truth : str):
+        model_answer = model_answer.strip()
         if "{" in model_answer and "}" in model_answer:
             start = model_answer.index("{") + 1
             end = model_answer.index("}")
@@ -72,3 +73,18 @@ class GPQADataProcessor(DataProcessor):
             return extracted_answer.lower().startswith(ground_truth.lower())
         else:
             return model_answer.strip().lower().startswith(ground_truth.lower())
+
+    def evaluate_answer(self, batch_size=16, **kwargs):
+        assert self.dataset is not None and "model_answer" in self.dataset[list(self.dataset.keys())[0]].column_names, \
+            "Model answers not found in the dataset. Please generate model answers before evaluation."
+        splits = self.dataset.keys()
+        for split in splits:
+            dataset = self.dataset[split]
+            
+            def judge(batch):
+                results = [1.0 if self._check_answer(m, g) else 0.0 
+                           for m, g in zip(batch['model_answer'], batch['ground_truth'])]
+                return {"label": results}
+
+            judged_dataset = dataset.map(judge, batched=True, batch_size=batch_size)
+            self.dataset[split] = judged_dataset

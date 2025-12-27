@@ -1,3 +1,4 @@
+from vllm import LLM, SamplingParams
 import os
 from datasets import load_dataset, concatenate_datasets, DatasetDict, Dataset
 from module.data import DataProcessor, register_processor
@@ -51,8 +52,8 @@ class MathDataProcessor(DataProcessor):
         self.config['name'] = 'math'
         self.config['evaluate_approach'] = 'llm-as-judge'
     
-    def evaluate_answer(self, model = "qwen3-30b-a3b-instruct-2507"):
-        assert self.dataset is not None and "model_answer" in self.dataset[self.dataset.keys()[0]].column_names, \
+    def evaluate_answer(self, model = "Qwen/Qwen3-30B-A3B-Instruct-2507", tensor_parallel_size=1, batch_size=16, **kwargs):
+        assert self.dataset is not None and "model_answer" in self.dataset[list(self.dataset.keys())[0]].column_names, \
             "Model answers not found in the dataset. Please generate model answers before evaluation."
         prompt = """You are required to help with a math problem evaluation. \
 Given an input text and a groundtruth answer, your task is to judge \
@@ -99,8 +100,7 @@ Groundtruth:
 
 Output:
 """
-        from vllm import LLM, SamplingParams
-        llm = LLM(model=model)
+        llm = LLM(model=model, tensor_parallel_size=tensor_parallel_size)
 
         splits = self.dataset.keys()
         for split in splits:
@@ -109,7 +109,7 @@ Output:
             def judge(batch):
                 inputs = []
                 for model_answer, ground_truth in zip(batch["model_answer"], batch["ground_truth"]):
-                    input_text = prompt.format(model_answer, ground_truth)
+                    input_text = prompt.format(model_answer.strip(), ground_truth)
                     inputs.append(input_text)
                 
                 sampling_params = SamplingParams(temperature=0.0, max_tokens=64)
@@ -119,5 +119,5 @@ Output:
                 results = [1.0 if res else 0.0 for res in results]
                 return {"label": results}
 
-            judged_dataset = dataset.map(judge, batched=True)
+            judged_dataset = dataset.map(judge, batched=True, batch_size=batch_size)
             self.dataset[split] = judged_dataset

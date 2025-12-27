@@ -1,4 +1,5 @@
 
+from vllm import LLM, SamplingParams
 from abc import ABC, abstractmethod
 import os
 import json
@@ -47,7 +48,7 @@ class DataProcessor(ABC):
     def load(self):
         if not os.path.exists(self.data_dir) or not os.listdir(self.data_dir):
             print(f"Data directory {self.data_dir} does not exist. Loading from raw dataset.")
-            self.load_from_raw_dataset()            
+            self.load_from_raw_dataset()          
             print(f"Loaded from raw dataset. Saving processed dataset to {self.data_dir}.")
             self.save(self.data_dir)
         else:
@@ -86,8 +87,6 @@ class DataProcessor(ABC):
                         batch_size=16):
         assert self.dataset is not None, "Dataset is not loaded. Please load the dataset before generating answers."
 
-        from vllm import LLM, SamplingParams
-
         llm = LLM(model=model,
                   revision=revision,
                   tensor_parallel_size=tensor_parallel_size)
@@ -99,7 +98,7 @@ class DataProcessor(ABC):
         def generate(batch):
             prompts = batch['prompt']
             responses = llm.generate(prompts, sampling_params)
-            responses = [r.outputs[0].text.strip() for r in responses]
+            responses = [r.outputs[0].text for r in responses]
             return {'model_answer': responses}
             
         splits = self.dataset.keys()
@@ -110,7 +109,7 @@ class DataProcessor(ABC):
         self.config['revision'] = revision
             
     @abstractmethod
-    def evaluate_answer(self):
+    def evaluate_answer(self, **kwargs):
         pass
 
     @staticmethod
@@ -159,7 +158,7 @@ class DataProcessor(ABC):
         selected_indices = selected_smaller_indices + selected_larger_indices
             
         return selected_indices
-    
+
 class ProcessorRegistry:
     def __init__(self):
         self._registry = {}

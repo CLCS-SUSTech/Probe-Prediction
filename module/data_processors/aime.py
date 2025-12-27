@@ -41,7 +41,7 @@ class AimeDataProcessor(DataProcessor):
         self.config['name'] = 'aime'
         self.config['evaluate_approach'] = 'exact-match'
     
-    def check_answer(self, model_answer, ground_truth):
+    def _check_answer(self, model_answer, ground_truth):
         model_answer = model_answer.strip()
         ground_truth = ground_truth.strip()
         if "{" in model_answer and "}" in model_answer:
@@ -57,3 +57,18 @@ class AimeDataProcessor(DataProcessor):
                 return extracted_answer == ground_truth
             else:
                 return False
+    
+    def evaluate_answer(self, batch_size=16, **kwargs):
+        assert self.dataset is not None and "model_answer" in self.dataset[list(self.dataset.keys())[0]].column_names, \
+            "Model answers not found in the dataset. Please generate model answers before evaluation."
+        splits = self.dataset.keys()
+        for split in splits:
+            dataset = self.dataset[split]
+            
+            def judge(batch):
+                results = [1.0 if self._check_answer(m, g) else 0.0 
+                           for m, g in zip(batch['model_answer'], batch['ground_truth'])]
+                return {"label": results}
+
+            judged_dataset = dataset.map(judge, batched=True, batch_size=batch_size)
+            self.dataset[split] = judged_dataset

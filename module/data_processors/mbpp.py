@@ -99,7 +99,7 @@ class MBPPDataProcessor(DataProcessor):
             **kwargs
         )
 
-    def evaluate_answer(self, batch_size=16, splits=["train", "test"], **kwargs):
+    def evaluate_answer(self, batch_size=16, splits=["train", "test"], num_proc=8, **kwargs):
         for split in splits:
             assert self.dataset is not None and "model_answer" in self.dataset[split].column_names, f"Model answers not found in dataset split '{split}'. Please generate model answers before evaluation."
             dataset = self.dataset[split]
@@ -131,5 +131,5 @@ class MBPPDataProcessor(DataProcessor):
                     'label': labels
                 }
             
-            judge_dataset = dataset.map(judge, batched=True, batch_size=batch_size)
+            judge_dataset = dataset.map(judge, batched=True, batch_size=batch_size, num_proc=num_proc)
             self.dataset[split] = judge_dataset

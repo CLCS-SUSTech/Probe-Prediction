@@ -32,10 +32,10 @@ class MMLUDataProcessor(DataProcessor):
 
         return extracted_answer.lower() == ground_truth.lower()
 
-    def evaluate_answer(self, batch_size=16, splits=["train", "test"], **kwargs):
+    def evaluate_answer(self, batch_size=16, splits=["train", "test"], num_proc=8, **kwargs):
         for split in splits:
             assert self.dataset is not None and "model_answer" in self.dataset[split].column_names, "Model answers not found. Please generate model answers before evaluation."
-            dataset = self.dataset[split]
+            dataset:DatasetDict = self.dataset[split]
             
             def judge(batch):
                 results = []
@@ -44,5 +44,5 @@ class MMLUDataProcessor(DataProcessor):
                     results.append(1.0 if is_correct else 0.0)
                 return {"label": results}
 
-            judged_dataset = dataset.map(judge, batched=True, batch_size=batch_size)
+            judged_dataset = dataset.map(judge, batched=True, batch_size=batch_size, num_proc=num_proc)
             self.dataset[split] = judged_dataset

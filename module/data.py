@@ -58,10 +58,6 @@ class DataProcessor(ABC):
                     self.config = json.load(f)
             self.dataset = load_from_disk(self.data_dir)
 
-        # cut down the dataset for quick testing if needed
-        for split in self.dataset.keys():
-            self.dataset[split] = self.dataset[split].select(range(min(100, len(self.dataset[split]))))
-
         print(f"Dataset Information:")
         print(json.dumps(self.config, indent=4))
     

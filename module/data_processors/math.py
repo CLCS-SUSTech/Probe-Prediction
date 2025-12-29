@@ -104,19 +104,14 @@ Output:
         for split in splits:
             assert self.dataset is not None and "model_answer" in self.dataset[split].column_names, f"Model answers not found in the dataset split '{split}'. Please generate model answers before evaluation."
             dataset = self.dataset[split]
-
-            def judge(batch):
-                inputs = []
-                for model_answer, ground_truth in zip(batch["model_answer"], batch["ground_truth"]):
-                    input_text = prompt.format(model_answer.strip(), ground_truth)
-                    inputs.append(input_text)
-                
-                sampling_params = SamplingParams(temperature=0.0, max_tokens=64)
-                outputs = llm.generate(inputs, sampling_params)
-                outputs = [output.outputs[0].text.strip() for output in outputs]
-                results = [output.lower().startswith("true") or output.lower().startswith("yes") for output in outputs]
-                results = [1.0 if res else 0.0 for res in results]
-                return {"label": results}
-
-            judged_dataset = dataset.map(judge, batched=True, batch_size=batch_size)
-            self.dataset[split] = judged_dataset
+            sampling_params = SamplingParams(temperature=0.0, max_tokens=64)
+            inputs = []
+            for model_answer, ground_truth in zip(dataset["model_answer"], dataset["ground_truth"]
+            ):
+                input_text = prompt.format(model_answer.strip(), ground_truth)
+                inputs.append(input_text)
+            outputs = llm.generate(inputs, sampling_params)
+            outputs = [output.outputs[0].text.strip() for output in outputs]
+            results = [output.lower().startswith("true") or output.lower().startswith("yes") for output in outputs]
+            results = [1.0 if res else 0.0 for res in results]
+            self.dataset[split] = dataset.add_column("label", results)

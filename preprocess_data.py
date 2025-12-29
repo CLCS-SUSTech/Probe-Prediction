@@ -42,7 +42,7 @@ if __name__ == "__main__":
                     split_dir = os.path.join(stage2_dir, split)
                     if not os.path.exists(split_dir) or len(os.listdir(split_dir)) == 0:
                         to_process_splits.append(split)
-                processor.generate_answer(model=args.model_name, revision=args.revision, tensor_parallel_size=args.tensor_parallel_size, batch_size=args.batch_size, splits=to_process_splits)
+                processor.generate_answer(model=args.model_name, revision=args.revision, tensor_parallel_size=args.tensor_parallel_size, splits=to_process_splits)
                 processor.save(stage2_dir)
                 print(f"Stage 2 processing for dataset {dataset} completed and saved to {stage2_dir}.")
             if processor is None:

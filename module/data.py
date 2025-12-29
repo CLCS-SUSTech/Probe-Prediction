@@ -85,7 +85,6 @@ class DataProcessor(ABC):
                         max_tokens=1024,
                         top_p=1,
                         stop=["\n\nQuestion", "\n\nQ:"],
-                        batch_size=16,
                         splits=["train", "test"]):
         assert self.dataset is not None, "Dataset is not loaded. Please load the dataset before generating answers."
 
@@ -96,15 +95,12 @@ class DataProcessor(ABC):
                                          max_tokens=max_tokens,
                                          top_p=top_p,
                                          stop=stop)
-
-        def generate(batch):
-            prompts = batch['prompt']
-            responses = llm.generate(prompts, sampling_params)
-            responses = [r.outputs[0].text for r in responses]
-            return {'model_answer': responses}
             
         for split in splits:
-            self.dataset[split] = self.dataset[split].map(generate, batched=True, batch_size=batch_size)
+            prompts = self.dataset[split]['prompt']
+            all_responses = llm.generate(prompts, sampling_params)
+            all_responses = [response.outputs[0].text for response in all_responses]
+            self.dataset[split] = self.dataset[split].add_column('model_answer', all_responses)
         
         self.config['model'] = model
         self.config['revision'] = revision

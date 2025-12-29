@@ -55,7 +55,6 @@ class HumanEvalDataProcessor(DataProcessor):
                         max_tokens=1024,
                         top_p=1,
                         stop=["\nclass", "\ndef", "\n#", "\nif", "\nprint"],
-                        batch_size=16,
                         splits=["train", "test"],
                         **kwargs):
         default_stop = ["\nclass", "\ndef", "\n#", "\nif", "\nprint"]
@@ -69,7 +68,6 @@ class HumanEvalDataProcessor(DataProcessor):
             max_tokens,
             top_p,
             stop=default_stop,
-            batch_size=batch_size,
             splits=splits,
             **kwargs
         )

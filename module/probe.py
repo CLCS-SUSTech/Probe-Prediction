@@ -274,7 +274,11 @@ class ExtraLayerProbe(ProbeWrapper):
             cache_position=cache_position,
             position_embeddings=position_embeddings,
             **kwargs
-        )[0]
+        )
+
+        if isinstance(hidden_states, tuple):
+            hidden_states = hidden_states[0]
+
         hidden_states = self.norm(hidden_states)
         logits = self.classifier(hidden_states)
         return logits

@@ -66,13 +66,11 @@ class GPQADataProcessor(DataProcessor):
 
     def _check_answer(self, model_answer : str, ground_truth : str):
         model_answer = model_answer.strip()
-        if "{" in model_answer and "}" in model_answer:
-            start = model_answer.index("{") + 1
-            end = model_answer.index("}")
-            extracted_answer = model_answer[start:end].strip()
+        if "\\boxed{" in model_answer:
+            ans_text = model_answer.split('\\boxed{')[-1]
+            extracted_answer = ans_text.split('}')[0].strip()
             return extracted_answer.lower().startswith(ground_truth.lower())
-        else:
-            return model_answer.strip().lower().startswith(ground_truth.lower())
+        return False
 
     def evaluate_answer(self, batch_size=16, splits=["train", "test"], **kwargs):
         for split in splits:

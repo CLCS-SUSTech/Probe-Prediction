@@ -44,19 +44,11 @@ class AimeDataProcessor(DataProcessor):
     def _check_answer(self, model_answer, ground_truth):
         model_answer = model_answer.strip()
         ground_truth = ground_truth.strip()
-        if "{" in model_answer and "}" in model_answer:
-            start = model_answer.index("{") + 1
-            end = model_answer.index("}")
-            extracted_answer = model_answer[start:end].strip()
+        if "\\boxed{" in model_answer:
+            ans_text = model_answer.split('\\boxed{')[-1]
+            extracted_answer = ans_text.split('}')[0].strip()
             return extracted_answer == ground_truth
-        else:
-            pattern = r'^\d+'
-            match = re.match(pattern, model_answer)
-            if match:
-                extracted_answer = match.group(0)
-                return extracted_answer == ground_truth
-            else:
-                return False
+        return False
     
     def evaluate_answer(self, batch_size=16, splits=["train", "test"], **kwargs):
         splits = self.dataset.keys()

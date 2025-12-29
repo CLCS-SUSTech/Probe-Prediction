@@ -38,7 +38,7 @@ def train(args):
 
     for dataset in args.datasets:
         logger.info(f"Loading dataset processor for {dataset}")
-        stage3_dir = os.path.join(args.work_dir, "datasets", args.model_name, dataset, "stage3")
+        stage3_dir = os.path.join(args.work_dir, "datasets", args.model_name.replace("/", "--"), args.revision, dataset, "stage3")
         dataset_processor = load_dataset_processor(
             dataset,
             stage3_dir,
@@ -64,9 +64,15 @@ def train(args):
         testset = testset.remove_columns([col for col in testset.column_names if col not in ['prompt', 'label']])
         trainsets.append(trainset)
         testsets.append(testset)
-    
-    trainset = concatenate_datasets(trainsets)
-    testset = concatenate_datasets(testsets)
+        
+    if len(trainsets) == 1:
+        trainset = trainsets[0]
+        testset = testsets[0]
+    else:
+        trainset = concatenate_datasets(trainsets)
+        testset = concatenate_datasets(testsets)
+
+    trainset = trainset.shuffle(seed=42)
 
     trainset = trainset.map(lambda x: tokenize_function(x, tokenizer), batched=True)
     testset = testset.map(lambda x: tokenize_function(x, tokenizer), batched=True)

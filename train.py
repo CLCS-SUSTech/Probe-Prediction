@@ -79,7 +79,7 @@ def train(args):
     testset = testset.map(lambda x: tokenize_function(x, tokenizer), batched=True)
 
     training_args = TrainingArguments(
-        output_dir=args.output_dir,
+        output_dir=os.path.join(args.work_dir, 'experiments', args.run_name, "model"),
         per_device_train_batch_size=4,
         per_device_eval_batch_size=4,
         eval_strategy='steps',

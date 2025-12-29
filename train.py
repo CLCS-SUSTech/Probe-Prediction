@@ -32,6 +32,7 @@ def train(args):
     model = MultiLayerProbe(probe_cfg, base_model, components)
 
     os.makedirs(os.path.join(args.work_dir, "datasets"), exist_ok=True)
+    os.makedirs(os.path.join(args.work_dir, 'experiments', args.run_name), exist_ok=True)
 
     trainsets = []
     testsets = []
@@ -64,7 +65,7 @@ def train(args):
         testset = testset.remove_columns([col for col in testset.column_names if col not in ['prompt', 'label']])
         trainsets.append(trainset)
         testsets.append(testset)
-        
+
     if len(trainsets) == 1:
         trainset = trainsets[0]
         testset = testsets[0]
@@ -92,7 +93,7 @@ def train(args):
         lr_scheduler_kwargs={'min_lr_rate': 0.01},
         bf16=True,
         bf16_full_eval=True,
-        logging_dir='./logs',
+        logging_dir=os.path.join(args.work_dir, 'experiments', args.run_name, 'logs'),
         logging_steps=1,
         report_to=['swanlab'],
         label_names=['label'],
@@ -110,8 +111,8 @@ def train(args):
     )
 
     trainer.train()
-    os.makedirs(os.path.join(args.work_dir, 'experiments', args.experiment_name, "model"), exist_ok=True)
-    output_dir = os.path.join(args.work_dir, 'experiments', args.experiment_name, "model")
+    os.makedirs(os.path.join(args.work_dir, 'experiments', args.run_name, "model"), exist_ok=True)
+    output_dir = os.path.join(args.work_dir, 'experiments', args.run_name, "model")
 
     model.save_pretrained(output_dir)
 
@@ -128,6 +129,6 @@ if __name__ == "__main__":
     parser.add_argument('--run_name', type=str, default='probe-training', help='Run name for logging')
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
     parser.add_argument('--limit', type=List[int], default=[10000, -1], help='Limit number of samples for train and test sets')
-    parser.add_argument('--experiment_name', type=str, default='probe_experiment', help='Experiment name for logging')
+    parser.add_argument('--run_name', type=str, default='probe_experiment', help='Run name for experiment')
     args = parser.parse_args()
     train(args)

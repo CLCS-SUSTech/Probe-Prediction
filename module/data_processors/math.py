@@ -52,9 +52,7 @@ class MathDataProcessor(DataProcessor):
         self.config['name'] = 'math'
         self.config['evaluate_approach'] = 'llm-as-judge'
     
-    def evaluate_answer(self, model = "Qwen/Qwen3-30B-A3B-Instruct-2507", tensor_parallel_size=1, batch_size=16, **kwargs):
-        assert self.dataset is not None and "model_answer" in self.dataset[list(self.dataset.keys())[0]].column_names, \
-            "Model answers not found in the dataset. Please generate model answers before evaluation."
+    def evaluate_answer(self, model = "Qwen/Qwen3-30B-A3B-Instruct-2507", tensor_parallel_size=1, batch_size=16, splits=["train", "test"], **kwargs):
         prompt = """You are required to help with a math problem evaluation. \
 Given an input text and a groundtruth answer, your task is to judge \
 whether the final answer given by the input is correct or not. \
@@ -104,6 +102,7 @@ Output:
 
         splits = self.dataset.keys()
         for split in splits:
+            assert self.dataset is not None and "model_answer" in self.dataset[split].column_names, f"Model answers not found in the dataset split '{split}'. Please generate model answers before evaluation."
             dataset = self.dataset[split]
 
             def judge(batch):

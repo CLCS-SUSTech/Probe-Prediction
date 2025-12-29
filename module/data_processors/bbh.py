@@ -28,7 +28,7 @@ class BBHDataProcessor(DataProcessor):
                     for opt, txt in zip(example['choices']['label'], example['choices']['text']):
                         prompt += f"{opt}: {txt}\n"
                 elif "OPTIONS" in prefix:
-                    prompt += prefix[prefix.index("OPTIONS:"):prefix.index["Let's"]].strip() + "\n"
+                    prompt += prefix[prefix.index("OPTIONS:"):prefix.index("Let's")].strip() + "\n"
                 prompt += "Let's think step by step.\n"
                 
                 return {
@@ -40,7 +40,7 @@ class BBHDataProcessor(DataProcessor):
             return ds.map(convert, remove_columns=ds.column_names)
 
         dataset_list = [process_task_data(task) for task in tasks]
-        test_list = [d.select(range(-50, None)) for d in dataset_list]
+        test_list = [d.select(range(len(d) - 50, len(d))) for d in dataset_list]
         train_list = [d.select(range(0, len(d) - 50)) for d in dataset_list]
         self.dataset = DatasetDict({
             "train": concatenate_datasets(train_list),
@@ -68,8 +68,9 @@ class BBHDataProcessor(DataProcessor):
         gt_clean = re.sub(r"[\(\)\.]", "", ground_truth).strip()
         return extracted.lower() == gt_clean.lower()
 
-    def evaluate_answer(self, batch_size=16, **kwargs):
-        for split in self.dataset.keys():
+    def evaluate_answer(self, batch_size=16, splits=["train", "test"], **kwargs):
+        for split in splits:
+            assert self.dataset is not None and "model_answer" in self.dataset[split].column_names, f"Model answers not found in the dataset split '{split}'. Please generate model answers before evaluation."
             def judge(batch):
                 results = [1.0 if self._check_answer(m, g) else 0.0 
                            for m, g in zip(batch['model_answer'], batch['ground_truth'])]

@@ -58,11 +58,10 @@ class AimeDataProcessor(DataProcessor):
             else:
                 return False
     
-    def evaluate_answer(self, batch_size=16, **kwargs):
-        assert self.dataset is not None and "model_answer" in self.dataset[list(self.dataset.keys())[0]].column_names, \
-            "Model answers not found in the dataset. Please generate model answers before evaluation."
+    def evaluate_answer(self, batch_size=16, splits=["train", "test"], **kwargs):
         splits = self.dataset.keys()
         for split in splits:
+            assert self.dataset is not None and "model_answer" in self.dataset[split].column_names, f"Model answers not found in the dataset split '{split}'. Please generate model answers before evaluation."
             dataset = self.dataset[split]
             
             def judge(batch):

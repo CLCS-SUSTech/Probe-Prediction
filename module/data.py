@@ -57,6 +57,11 @@ class DataProcessor(ABC):
                 with open(os.path.join(self.data_dir, 'config.json'), 'r') as f:
                     self.config = json.load(f)
             self.dataset = load_from_disk(self.data_dir)
+
+        # cut down the dataset for quick testing if needed
+        for split in self.dataset.keys():
+            self.dataset[split] = self.dataset[split].select(range(min(100, len(self.dataset[split]))))
+
         print(f"Dataset Information:")
         print(json.dumps(self.config, indent=4))
     
@@ -81,10 +86,11 @@ class DataProcessor(ABC):
                         revision="main",
                         tensor_parallel_size=1,
                         temperature=0.0,
-                        max_tokens=512,
+                        max_tokens=1024,
                         top_p=1,
-                        stop="\n\nQuestion",
-                        batch_size=16):
+                        stop=["\n\nQuestion", "\n\nQ:"],
+                        batch_size=16,
+                        splits=["train", "test"]):
         assert self.dataset is not None, "Dataset is not loaded. Please load the dataset before generating answers."
 
         llm = LLM(model=model,
@@ -101,7 +107,6 @@ class DataProcessor(ABC):
             responses = [r.outputs[0].text for r in responses]
             return {'model_answer': responses}
             
-        splits = self.dataset.keys()
         for split in splits:
             self.dataset[split] = self.dataset[split].map(generate, batched=True, batch_size=batch_size)
         
@@ -192,6 +197,8 @@ def _load_processor_cls():
         importlib.import_module(f"{package.__name__}.{module_name}")
 
 _load_processor_cls()
+
+print(f"Registered dataset processors: {registry.list()}")
 
 def load_dataset_processor(name: str, data_dir : str) -> DataProcessor:
     '''

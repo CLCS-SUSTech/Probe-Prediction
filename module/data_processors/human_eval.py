@@ -55,7 +55,9 @@ class HumanEvalDataProcessor(DataProcessor):
                         max_tokens=1024,
                         top_p=1,
                         stop=["\nclass", "\ndef", "\n#", "\nif", "\nprint"],
-                        batch_size=16):
+                        batch_size=16,
+                        splits=["train", "test"],
+                        **kwargs):
         default_stop = ["\nclass", "\ndef", "\n#", "\nif", "\nprint"]
         if stop != default_stop:
             print(f"Warning: The provided stop tokens {stop} differ from the default stop tokens {default_stop}. To ensure proper code generation, the settings will be changed back to the default stop tokens.")
@@ -67,18 +69,15 @@ class HumanEvalDataProcessor(DataProcessor):
             max_tokens,
             top_p,
             stop=default_stop,
-            batch_size=batch_size
+            batch_size=batch_size,
+            splits=splits,
+            **kwargs
         )
     
-    def evaluate_answer(self, batch_size=16, **kwargs):
-        assert self.dataset is not None and "model_answer" in self.dataset[list(self.dataset.keys())[0]].column_names, \
-            "Model answers not found in the dataset. Please generate model answers before evaluation."
-
-        splits = self.dataset.keys()
-
+    def evaluate_answer(self, batch_size=16, splits=["train", "test"], **kwargs):
         for split in splits:
+            assert self.dataset is not None and "model_answer" in self.dataset[split].column_names, f"Model answers not found in the dataset split '{split}'. Please generate model answers before evaluation."
             dataset = self.dataset[split]
-
             def judge(batch):
                 
                 predictions = [[p + (ans if ans.find("```") == -1 else ans[: ans.find("```")])] for p, ans in zip(batch["prompt"], batch["model_answer"])]

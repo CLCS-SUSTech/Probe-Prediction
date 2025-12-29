@@ -63,17 +63,16 @@ class MBPPDataProcessor(DataProcessor):
         self.config['name'] = 'mbpp'
         self.config['evaluate_approach'] = 'code-execution'
 
-    def _extract_answer(self, model_output):
-        code = model_output
-        if "[DONE]" in code:
-            code = code.split("[DONE]")[0]
-        
-        if "```python" in code:
-            code = code.split("```python")[1].split("```")[0]
-        elif "```" in code:
-            code = code.split("```")[1].split("```")[0]
-            
-        return code.strip()
+    def _extract_code_blocks(self, text: str) -> str:
+        pattern = r"```(?:\w+)?\n?(.*?)\n?```"
+        matches = re.findall(pattern, r"```" + text, re.DOTALL)
+        if not matches:
+            text_without_lang = re.sub(r"```python", "```", text)
+            matches = re.findall(pattern, text_without_lang, re.DOTALL)
+        if not matches:
+            return text
+        else:
+            return matches[0]
     
     def generate_answer(self,
                         model,
@@ -83,7 +82,9 @@ class MBPPDataProcessor(DataProcessor):
                         max_tokens=1024,
                         top_p=1,
                         stop=["[DONE]"],
-                        batch_size=16):
+                        batch_size=16,
+                        splits=["train", "test"],
+                        **kwargs):
         default_stop = ["[DONE]"]
         if stop != default_stop:
             print(f"Warning: The provided stop tokens {stop} differ from the default stop tokens {default_stop}. To ensure proper code generation, the settings will be changed back to the default stop tokens.")
@@ -95,16 +96,14 @@ class MBPPDataProcessor(DataProcessor):
             max_tokens,
             top_p,
             stop=default_stop,
-            batch_size=batch_size
+            batch_size=batch_size,
+            splits=splits,
+            **kwargs
         )
 
-    def evaluate_answer(self, batch_size=16, **kwargs):
-        assert self.dataset is not None and "model_answer" in self.dataset[list(self.dataset.keys())[0]].column_names, \
-            "Model answers not found. Please generate model answers before evaluation."
-
-        splits = self.dataset.keys()
-
+    def evaluate_answer(self, batch_size=16, splits=["train", "test"], **kwargs):
         for split in splits:
+            assert self.dataset is not None and "model_answer" in self.dataset[split].column_names, f"Model answers not found in dataset split '{split}'. Please generate model answers before evaluation."
             dataset = self.dataset[split]
 
             def judge(batch):
@@ -115,8 +114,10 @@ class MBPPDataProcessor(DataProcessor):
                         ans = ans[:ans.find("```")]
                     return ans
 
-                predictions = [[p + clean_gen(ans)] for p, ans in zip(batch["prompt"], batch["model_answer"])]
-                references = [test_code for test_code in batch["tests"]]
+                predictions = [[clean_gen(self._extract_code_blocks(ans))] for p, ans in zip(batch["prompt"], batch["model_answer"])]
+                references = [
+                    "\n".join(tests) for tests in batch["tests"]
+                ]
                 
                 results, logs = self.code_eval.compute(
                     predictions=predictions, 

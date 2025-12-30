@@ -87,7 +87,7 @@ class ProbeWrapper(PreTrainedModel):
         self.pretrained_model.requires_grad_(False)
 
         self.pretrained_model_components = pretrained_model_components
-        self.loss_fn = nn.BCEWithLogitsLoss()
+        self.loss_fn = nn.MSELoss()
 
     @can_return_tuple
     def forward(
@@ -177,7 +177,7 @@ class ProbeWrapper(PreTrainedModel):
             labels = labels.flatten()
             if labels.dtype != torch.float32:
                 logger.warning_once(
-                    f'BCELoss requires labels in torch.float32, but got {labels.dtype}. Converting labels to float32.'
+                    f'MSELoss requires labels in torch.float32, but got {labels.dtype}. Converting labels to float32.'
                 )
                 labels = labels.to(torch.float32)
             loss = self.loss_fn(pooled_logits, labels)

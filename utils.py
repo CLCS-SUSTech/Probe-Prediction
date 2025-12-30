@@ -2,6 +2,7 @@ from sklearn.metrics import f1_score, roc_auc_score
 from transformers.trainer_utils import EvalPrediction
 from typing import List, Tuple, Dict, Optional
 import numpy as np
+from math import comb
 
 def compute_metrics_cls(eval_pred: EvalPrediction | Tuple[np.ndarray, np.ndarray], compute_result: Optional[bool] = None) -> Dict[str, float]:
     predictions, labels = eval_pred
@@ -20,3 +21,14 @@ def compute_metrics_cls(eval_pred: EvalPrediction | Tuple[np.ndarray, np.ndarray
         auc_sigmoid = 0.0
     return {'acc': accuracy, 'f1': f1, 'auc_raw': auc_raw, 'auc_sigmoid': auc_sigmoid}
     
+def pass_k(c: int, k: int, n: int) -> float:
+    assert isinstance(c, int) and isinstance(k, int) and isinstance(n, int), "c, k, n must be integers"
+    assert c >= 0 and k >= 0 and n >= 0, "c, k, n must be non-negative"
+    assert c <= n and k <= n, "c, k cannot be greater than n"
+    if n - c < k:
+        return 1.0
+    try:
+        prob_no_success = comb(n - c, k) / comb(n, k)
+    except ValueError:
+        return 0.0
+    return float(1.0 - prob_no_success)

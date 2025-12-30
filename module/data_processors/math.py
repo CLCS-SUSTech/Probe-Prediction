@@ -3,6 +3,7 @@ import os
 from datasets import load_dataset, concatenate_datasets, DatasetDict, Dataset
 from module.data import DataProcessor, register_processor
 import json
+from utils import pass_k
 
 @register_processor('math')
 class MathDataProcessor(DataProcessor):
@@ -52,7 +53,7 @@ class MathDataProcessor(DataProcessor):
         self.config['name'] = 'math'
         self.config['evaluate_approach'] = 'llm-as-judge'
     
-    def evaluate_answer(self, model = "Qwen/Qwen3-30B-A3B-Instruct-2507", tensor_parallel_size=1, batch_size=16, splits=["train", "test"], **kwargs):
+    def evaluate_answer(self, model = "Qwen/Qwen3-30B-A3B-Instruct-2507", tensor_parallel_size=1, batch_size=16, splits=["train", "test"], k=1, **kwargs):
         prompt = """You are required to help with a math problem evaluation. \
 Given an input text and a groundtruth answer, your task is to judge \
 whether the final answer given by the input is correct or not. \
@@ -104,14 +105,18 @@ Output:
         for split in splits:
             assert self.dataset is not None and "model_answer" in self.dataset[split].column_names, f"Model answers not found in the dataset split '{split}'. Please generate model answers before evaluation."
             dataset = self.dataset[split]
-            sampling_params = SamplingParams(temperature=0.0, max_tokens=64)
+            sampling_params = SamplingParams(temperature=0.0, max_tokens=64, stop=["\n\n"])
             inputs = []
+            n = len(dataset['model_answer'][0])
             for model_answer, ground_truth in zip(dataset["model_answer"], dataset["ground_truth"]
             ):
-                input_text = prompt.format(model_answer.strip(), ground_truth)
-                inputs.append(input_text)
+                for ans in model_answer:
+                    input_text = prompt.format(ans.strip(), ground_truth)
+                    inputs.append(input_text)
             outputs = llm.generate(inputs, sampling_params)
             outputs = [output.outputs[0].text.strip() for output in outputs]
-            results = [output.lower().startswith("true") or output.lower().startswith("yes") for output in outputs]
-            results = [1.0 if res else 0.0 for res in results]
+            results = [output.lower().startswith("true") for output in outputs]
+            results = []
+            for i in range(0, len(results), n):
+                results.append(pass_k(sum(results[i:i+n]), k, n))
             self.dataset[split] = dataset.add_column("label", results)

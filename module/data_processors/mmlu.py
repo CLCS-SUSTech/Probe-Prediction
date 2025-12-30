@@ -32,16 +32,14 @@ class MMLUDataProcessor(DataProcessor):
 
         return extracted_answer.lower() == ground_truth.lower()
 
-    def evaluate_answer(self, batch_size=16, splits=["train", "test"], num_proc=8, **kwargs):
+    def evaluate_answer(self, batch_size=16, splits=["train", "test"], num_proc=8, k=1, **kwargs):
         for split in splits:
             assert self.dataset is not None and "model_answer" in self.dataset[split].column_names, "Model answers not found. Please generate model answers before evaluation."
             dataset:DatasetDict = self.dataset[split]
             
             def judge(batch):
-                results = []
-                for model_answer, ground_truth in zip(batch['model_answer'], batch['ground_truth']):
-                    is_correct = self._check_answer(model_answer, ground_truth)
-                    results.append(1.0 if is_correct else 0.0)
+                results = [self._cal_passk(m, g, k) # when n=1 and k=1, pass@1(n=1) is equivalent to exact match accuracy
+                           for m, g in zip(batch['model_answer'], batch['ground_truth'])] # `model_answer` should be a list in the new ver. of llm generation
                 return {"label": results}
 
             judged_dataset = dataset.map(judge, batched=True, batch_size=batch_size, num_proc=num_proc)

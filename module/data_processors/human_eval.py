@@ -89,9 +89,12 @@ class HumanEvalDataProcessor(DataProcessor):
                     references=references, 
                     k=[1]
                 )
+                # TODO:
+                # Please double check the output here, use pass@k directly
+                # --------------------------------
                 labels = []
-                for i in range(len(batch["prompt"])):
-                    labels.append(1.0 if logs[i][0][1]['passed'] else 0.0) # only work with num_process=1
+                # for i in range(len(batch["prompt"])):
+                #     labels.append(1.0 if logs[i][0][1]['passed'] else 0.0) # only work with num_process=1
 
                 return {
                     'label': labels

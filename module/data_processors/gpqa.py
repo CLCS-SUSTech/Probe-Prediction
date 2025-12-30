@@ -72,13 +72,13 @@ class GPQADataProcessor(DataProcessor):
             return extracted_answer.lower().startswith(ground_truth.lower())
         return False
 
-    def evaluate_answer(self, batch_size=16, splits=["train", "test"], **kwargs):
+    def evaluate_answer(self, batch_size=16, splits=["train", "test"], k=1, **kwargs):
         for split in splits:
             assert self.dataset is not None and "model_answer" in self.dataset[split].column_names,  f"Model answers not found in the dataset '{split}'. Please generate model answers before evaluation."
             dataset = self.dataset[split]
             
             def judge(batch):
-                results = [1.0 if self._check_answer(m, g) else 0.0 
+                results = [self._cal_passk(m, g, k) 
                            for m, g in zip(batch['model_answer'], batch['ground_truth'])]
                 return {"label": results}
 

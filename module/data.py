@@ -1,4 +1,6 @@
 
+from typing import List
+from utils import pass_k
 from vllm import LLM, SamplingParams
 from abc import ABC, abstractmethod
 import os
@@ -84,6 +86,7 @@ class DataProcessor(ABC):
                         temperature=0.0,
                         max_tokens=1024,
                         top_p=1,
+                        n=1,
                         stop=["\n\nQuestion", "\n\nQ:"],
                         splits=["train", "test"]):
         assert self.dataset is not None, "Dataset is not loaded. Please load the dataset before generating answers."
@@ -95,13 +98,26 @@ class DataProcessor(ABC):
                                          max_tokens=max_tokens,
                                          top_p=top_p,
                                          stop=stop)
-            
+        
+        all_prompts = []
+        prompt_counts_per_split = []
         for split in splits:
             prompts = self.dataset[split]['prompt']
-            all_responses = llm.generate(prompts, sampling_params)
-            all_responses = [response.outputs[0].text for response in all_responses]
-            self.dataset[split] = self.dataset[split].add_column('model_answer', all_responses)
-        
+            all_prompts.extend([p for p in prompts for _ in range(n)])
+            prompt_counts_per_split.append(len(prompts) * n)
+
+        all_responses = llm.generate(all_prompts, sampling_params)
+        all_responses = [response.outputs[0].text for response in all_responses]
+
+        idx = 0
+        for count in prompt_counts_per_split:
+            responses_for_split = all_responses[idx:idx + count]
+            responses_per_prompt = []
+            for i in range(0, len(responses_for_split), n):
+                responses_per_prompt.append(responses_for_split[i:i + n])
+            self.dataset[split] = self.dataset[split].add_column('model_answer', responses_per_prompt)
+            idx += count
+
         self.config['model'] = model
         self.config['revision'] = revision
             
@@ -155,6 +171,11 @@ class DataProcessor(ABC):
         selected_indices = selected_smaller_indices + selected_larger_indices
             
         return selected_indices
+    
+    def _cal_passk(self, model_answer: List[str], ground_truth: str, k: int) -> float:
+        c = sum([self._check_answer(ans, ground_truth) for ans in model_answer])
+        n = len(model_answer)
+        return pass_k(c, k, n)
 
 class ProcessorRegistry:
     def __init__(self):

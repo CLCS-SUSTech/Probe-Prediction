@@ -49,17 +49,15 @@ class AimeDataProcessor(DataProcessor):
             extracted_answer = ans_text.split('}')[0].strip()
             return extracted_answer == ground_truth
         return False
-    
-    def evaluate_answer(self, batch_size=16, splits=["train", "test"], **kwargs):
+
+    def evaluate_answer(self, batch_size=16, splits=["train", "test"], k=1, **kwargs):
         splits = self.dataset.keys()
         for split in splits:
             assert self.dataset is not None and "model_answer" in self.dataset[split].column_names, f"Model answers not found in the dataset split '{split}'. Please generate model answers before evaluation."
-            dataset = self.dataset[split]
             
             def judge(batch):
-                results = [1.0 if self._check_answer(m, g) else 0.0 
-                           for m, g in zip(batch['model_answer'], batch['ground_truth'])]
+                results = [self._cal_passk(m, g, k) # when n=1 and k=1, pass@1(n=1) is equivalent to exact match accuracy
+                           for m, g in zip(batch['model_answer'], batch['ground_truth'])] # `model_answer` should be a list in the new ver. of llm generation
                 return {"label": results}
 
-            judged_dataset = dataset.map(judge, batched=True, batch_size=batch_size)
-            self.dataset[split] = judged_dataset
+            self.dataset[split] = self.dataset[split].map(judge, batched=True, batch_size=batch_size)

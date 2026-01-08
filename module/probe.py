@@ -11,6 +11,8 @@ from abc import ABC, abstractmethod
 from typing import Type, Dict, Tuple, Union, Callable
 import json
 import os
+from peft import get_peft_model, LoraConfig, TaskType
+from peft.utils import set_peft_model_state_dict
 
 logger = logging.getLogger(__name__)
 
@@ -461,5 +463,180 @@ class MultiLayerProbe(ProbeWrapper):
             self.norms[idx].load_state_dict(extract(f"norms.{idx}"))
         self.norms[-1].load_state_dict(extract(f"norms.{self.config.num_hidden_layers}"))
         self.classifier.load_state_dict(extract("classifier"))
+        
+        logger.info(f"Probe weights loaded from {load_path}")
+
+class LoraProbe(ProbeWrapper):
+
+    def __init__(self, config: ProbeConfig, pretrained_model: PreTrainedModel, pretrained_model_components: BaseModelComponents):
+        super().__init__(config, pretrained_model, pretrained_model_components)
+        
+        lora_config = LoraConfig(
+            task_type=TaskType.CAUSAL_LM,
+            inference_mode=False,
+            r=getattr(config, "lora_rank", 8),
+            lora_alpha=getattr(config, "lora_alpha", 32),
+            lora_dropout=getattr(config, "lora_dropout", 0.1),
+            target_modules=getattr(config, "lora_target_modules", None)
+        )
+        
+        self.pretrained_model = get_peft_model(self.pretrained_model, lora_config)
+        self.pretrained_model.print_trainable_parameters()
+        
+        self.classifier = nn.Linear(self.config.hidden_size, self.config.num_labels)
+        
+        target_dtype = next(self.pretrained_model.parameters()).dtype
+        self.classifier.to(target_dtype)
+
+    def probe_forward(self, transformer_outputs: BaseModelOutputWithPast, *args, **kwargs) -> torch.Tensor:
+        hidden_states = transformer_outputs.hidden_states[-1]
+        logits = self.classifier(hidden_states)
+        return logits
+    
+    def forward(
+        self,
+        input_ids: Optional[torch.LongTensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[Cache] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        cache_position: Optional[torch.LongTensor] = None,
+        **kwargs,
+    ) -> SequenceClassifierOutputWithPast:
+        
+        if (input_ids is None) ^ (inputs_embeds is not None):
+            raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
+
+        if inputs_embeds is None:
+            inputs_embeds = self.pretrained_model.get_input_embeddings()(input_ids)
+
+        cache_position = torch.arange(
+            0, inputs_embeds.shape[1], device=inputs_embeds.device
+        )
+
+        causal_mask = create_causal_mask(
+            config=self.config,
+            input_embeds=inputs_embeds,
+            attention_mask=attention_mask,
+            cache_position=cache_position,
+            past_key_values=None,
+            position_ids=position_ids,
+        )
+
+        if position_ids is None:
+            position_ids = cache_position.unsqueeze(0)
+
+        # In LoraProbe, pretrained_model includes the lora adapter
+        transformer_outputs = self.pretrained_model(
+            input_ids=None, # pass inputs_embeds
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
+            inputs_embeds=inputs_embeds,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=True,
+            cache_position=cache_position,
+            **kwargs
+        )
+
+        logits = self.probe_forward(
+            transformer_outputs=transformer_outputs,
+            position_ids=position_ids,
+            causal_mask=causal_mask,
+            cache_position=cache_position,
+            **kwargs
+        )
+
+        if input_ids is not None:
+            batch_size = input_ids.shape[0]
+        else:
+            batch_size = inputs_embeds.shape[0]
+
+        if self.config.pad_token_id is None and batch_size != 1:
+            raise ValueError("Cannot handle batch sizes > 1 if no padding token is defined.")
+        if self.config.pad_token_id is None:
+            last_non_pad_token = -1
+        elif input_ids is not None:
+            # To handle both left- and right- padding, we take the rightmost token that is not equal to pad_token_id
+            non_pad_mask = (input_ids != self.config.pad_token_id).to(logits.device, torch.int32)
+            token_indices = torch.arange(input_ids.shape[-1], device=logits.device, dtype=torch.int32)
+            last_non_pad_token = (token_indices * non_pad_mask).argmax(-1)
+        else:
+            last_non_pad_token = -1
+            logger.warning_once(
+                f"{self.__class__.__name__} will not detect padding tokens in `inputs_embeds`. Results may be "
+                "unexpected if using padding tokens in conjunction with `inputs_embeds.`"
+            )
+
+        pooled_logits = logits[torch.arange(batch_size, device=logits.device), last_non_pad_token]
+        pooled_logits = pooled_logits.flatten()
+
+        loss = None
+        if labels is not None:
+            labels = labels.flatten()
+            if labels.dtype != torch.float32:
+                logger.warning_once(
+                    f'MSELoss requires labels in torch.float32, but got {labels.dtype}. Converting labels to float32.'
+                )
+                labels = labels.to(torch.float32)
+            loss = self.loss_fn(pooled_logits, labels)
+
+        return SequenceClassifierOutputWithPast(
+            loss=loss,
+            logits=pooled_logits,
+        )
+    
+    def save_pretrained_probe(self, save_directory: str, safe_serialization: bool = True, **kwargs):
+        self.pretrained_model.save_pretrained(save_directory)
+        
+        state_dict = {}
+        state_dict["classifier.weight"] = self.classifier.weight
+        state_dict["classifier.bias"] = self.classifier.bias
+        
+        if safe_serialization:
+            from safetensors.torch import save_file
+            output_path = os.path.join(save_directory, "classifier.safetensors")
+            save_file(state_dict, output_path, metadata={"format": "safetensors"})
+        else:
+            output_path = os.path.join(save_directory, "classifier.bin")
+            torch.save(state_dict, output_path)
+
+        logger.info(f"Probe weights saved to {output_path}")
+    
+    def load_pretrained_probe(self, load_directory: str, **kwargs):
+        # Load adapter
+        safetensors_path = os.path.join(load_directory, "adapter_model.safetensors")
+        bin_path = os.path.join(load_directory, "adapter_model.bin")
+        
+        if os.path.exists(safetensors_path):
+            from safetensors.torch import load_file
+            adapter_state_dict = load_file(safetensors_path)
+            set_peft_model_state_dict(self.pretrained_model, adapter_state_dict)
+        elif os.path.exists(bin_path):
+            adapter_state_dict = torch.load(bin_path)
+            set_peft_model_state_dict(self.pretrained_model, adapter_state_dict)
+        else:
+             logger.warning(f"No LoRA adapter found at {load_directory}")
+
+        # Load classifier
+        c_safetensors = os.path.join(load_directory, "classifier.safetensors")
+        c_bin = os.path.join(load_directory, "classifier.bin")
+
+        if os.path.exists(c_safetensors):
+            from safetensors.torch import load_file
+            state_dict = load_file(c_safetensors)
+            load_path = c_safetensors
+        elif os.path.exists(c_bin):
+            state_dict = torch.load(c_bin)
+            load_path = c_bin
+        else:
+            raise FileNotFoundError(f"Classifier weights not found in {load_directory}. Expected 'classifier.safetensors' or 'classifier.bin'.")
+
+        self.classifier.load_state_dict(state_dict)
         
         logger.info(f"Probe weights loaded from {load_path}")

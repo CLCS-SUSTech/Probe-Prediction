@@ -11,7 +11,7 @@ class MathDataProcessor(DataProcessor):
     def __init__(self, data_dir):
         super().__init__(data_dir)
 
-    def load_from_raw_dataset(self):
+    def load_from_raw_dataset(self, seed=42, train_limit=6000):
         trainset = load_dataset("qwedsacf/competition_math", split="train")
         fewshots = trainset.select(range(4))
         trainset = trainset.select(range(4, len(trainset)))
@@ -44,6 +44,7 @@ class MathDataProcessor(DataProcessor):
             return trainset.filter(lambda x: x["question"] not in test_questions)
 
         trainset = remove_overlap(testset, trainset)
+        trainset = trainset.shuffle(seed=seed).select(range(min(train_limit, len(trainset))))
 
         self.dataset = DatasetDict({
             "train": trainset,
@@ -116,7 +117,7 @@ Output:
             outputs = llm.generate(inputs, sampling_params)
             outputs = [output.outputs[0].text.strip() for output in outputs]
             results = [output.lower().startswith("true") for output in outputs]
-            results = []
+            final_results = []
             for i in range(0, len(results), n):
-                results.append(pass_k(sum(results[i:i+n]), k, n))
-            self.dataset[split] = dataset.add_column("label", results)
+                final_results.append(pass_k(sum(results[i:i+n]), k, n))
+            self.dataset[split] = dataset.add_column("label", final_results)

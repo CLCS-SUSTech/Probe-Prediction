@@ -3,6 +3,7 @@ import re
 from datasets import load_dataset, DatasetDict, concatenate_datasets
 from module.data import DataProcessor, register_processor
 import evaluate as hf_evaluate
+from utils import pass_k
 
 @register_processor('mbpp')
 class MBPPDataProcessor(DataProcessor):
@@ -73,33 +74,8 @@ class MBPPDataProcessor(DataProcessor):
             return text
         else:
             return matches[0]
-    
-    def generate_answer(self,
-                        model,
-                        revision="main",
-                        tensor_parallel_size=1,
-                        temperature=0.0,
-                        max_tokens=1024,
-                        top_p=1,
-                        stop=["[DONE]"],
-                        splits=["train", "test"],
-                        **kwargs):
-        default_stop = ["[DONE]"]
-        if stop != default_stop:
-            print(f"Warning: The provided stop tokens {stop} differ from the default stop tokens {default_stop}. To ensure proper code generation, the settings will be changed back to the default stop tokens.")
-        super().generate_answer(
-            model,
-            revision,
-            tensor_parallel_size,
-            temperature,
-            max_tokens,
-            top_p,
-            stop=default_stop,
-            splits=splits,
-            **kwargs
-        )
 
-    def evaluate_answer(self, batch_size=16, splits=["train", "test"], num_proc=8, **kwargs):
+    def evaluate_answer(self, batch_size=16, splits=["train", "test"], num_proc=8, k=1, **kwargs):
         for split in splits:
             assert self.dataset is not None and "model_answer" in self.dataset[split].column_names, f"Model answers not found in dataset split '{split}'. Please generate model answers before evaluation."
             dataset = self.dataset[split]
@@ -111,8 +87,14 @@ class MBPPDataProcessor(DataProcessor):
                     if ans.find("```") != -1:
                         ans = ans[:ans.find("```")]
                     return ans
+                
+                predictions = []
+                for prompt, answers in zip(batch["prompt"], batch["model_answer"]):
+                    sample_preds = []
+                    for ans in answers:
+                        sample_preds.append(clean_gen(self._extract_code_blocks(ans)))
+                    predictions.append(sample_preds)
 
-                predictions = [[clean_gen(self._extract_code_blocks(ans))] for p, ans in zip(batch["prompt"], batch["model_answer"])]
                 references = [
                     "\n".join(tests) for tests in batch["tests"]
                 ]
@@ -122,13 +104,19 @@ class MBPPDataProcessor(DataProcessor):
                     references=references, 
                     k=[1]
                 )
-                
-                # TODO:
-                # Please double check the output here, use pass@k directly
-                # --------------------------------
+
                 labels = []
-                # for i in range(len(batch["prompt"])):
-                #     labels.append(1.0 if logs[i][0][1]['passed'] else 0.0)
+                for i in range(len(batch["prompt"])):
+                    problem_logs = logs[i]
+                    n = len(problem_logs)
+                    
+                    c = 0
+                    for _, result in problem_logs:
+                        if result.get('passed', False):
+                            c += 1
+                            
+                    score = pass_k(c, k, n)
+                    labels.append(score)
 
                 return {
                     'label': labels

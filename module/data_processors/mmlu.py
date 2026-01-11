@@ -9,8 +9,22 @@ class MMLUDataProcessor(DataProcessor):
     def __init__(self, data_dir):
         super().__init__(data_dir)
 
-    def load_from_raw_dataset(self):
-        self.dataset = load_dataset("bin957/mmlu_processed")
+    def load_from_raw_dataset(self, train_limit=10000):
+        dataset = load_dataset("bin957/mmlu_processed")
+        trainset = dataset['train']
+        data_names = list(set(trainset['data_name']))
+        avg = train_limit // len(data_names)
+        selected_indices = []
+        for name in data_names:
+            name_indices = [i for i, n in enumerate(trainset['data_name']) if n == name]
+            selected_name_indices = name_indices[:avg]
+            selected_indices.extend(selected_name_indices)
+        trainset = trainset.select(selected_indices)
+        testset = dataset['test']
+        self.dataset = DatasetDict({
+            'train': trainset,
+            'test': testset
+        })
 
         self.config['name'] = 'mmlu'
         self.config['evaluate_approach'] = 'exact-match'

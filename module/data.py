@@ -8,6 +8,7 @@ import json
 from datasets import load_from_disk, Dataset
 import warnings
 import math
+from typing import Callable
 
 class DataProcessor(ABC):
 
@@ -110,7 +111,7 @@ class DataProcessor(ABC):
         all_responses = [response.outputs[0].text for response in all_responses]
 
         idx = 0
-        for count in prompt_counts_per_split:
+        for split, count in zip(splits, prompt_counts_per_split):
             responses_for_split = all_responses[idx:idx + count]
             responses_per_prompt = []
             for i in range(0, len(responses_for_split), n):
@@ -172,8 +173,11 @@ class DataProcessor(ABC):
             
         return selected_indices
     
-    def _cal_passk(self, model_answer: List[str], ground_truth: str, k: int) -> float:
-        c = sum([self._check_answer(ans, ground_truth) for ans in model_answer])
+    def _cal_passk(self, model_answer: List[str], ground_truth: str, k: int, _check_answer: Callable=None) -> float:
+        if _check_answer is None:
+            c = sum([self._check_answer(ans, ground_truth) for ans in model_answer])
+        else:
+            c = sum([_check_answer(ans, ground_truth) for ans in model_answer])
         n = len(model_answer)
         return pass_k(c, k, n)
 

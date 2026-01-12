@@ -235,6 +235,69 @@ class ProbeWrapper(PreTrainedModel):
         model.load_pretrained_probe(pretrained_model_name_or_path, **kwargs)
 
         return model
+
+    def save_pretrained_probe(self, save_directory: str, safe_serialization: bool = True, **kwargs):
+        
+        full_state_dict = self.state_dict()
+        probe_state_dict = {}
+        
+        for name, param in self.named_parameters():
+            if param.requires_grad:
+                if name in full_state_dict:
+                    probe_state_dict[name] = full_state_dict[name].cpu()
+
+        os.makedirs(save_directory, exist_ok=True)
+        if safe_serialization:
+            from safetensors.torch import save_file
+            output_path = os.path.join(save_directory, "probe.safetensors")
+            save_file(probe_state_dict, output_path, metadata={"format": "safetensors"})
+        else:
+            output_path = os.path.join(save_directory, "probe.bin")
+            torch.save(probe_state_dict, output_path)
+            
+        logger.info(f"Saved {len(probe_state_dict)} tensors to {output_path}")
+    
+    def load_pretrained_probe(self, load_directory: str, **kwargs):
+        safetensors_path = os.path.join(load_directory, "probe.safetensors")
+        bin_path = os.path.join(load_directory, "probe.bin")
+
+        if os.path.exists(safetensors_path):
+            from safetensors.torch import load_file
+            state_dict = load_file(safetensors_path)
+            load_path = safetensors_path
+        elif os.path.exists(bin_path):
+            state_dict = torch.load(bin_path)
+            load_path = bin_path
+        else:
+            raise FileNotFoundError(f"Probe weights file not found in {load_directory}. Expected 'probe.safetensors' or 'probe.bin'.")
+        
+        loaded_keys = {}
+        for k, v in state_dict.items():
+            clean_k = k.replace("module.", "")
+            loaded_keys[clean_k] = v
+
+        loaded_count = 0
+        missing_trainable_params = []
+
+        for name, param in self.named_parameters():
+            clean_name = name.replace("module.", "")
+            
+            if clean_name in loaded_keys:
+                loaded_tensor = loaded_keys[clean_name]
+                param.data.copy_(loaded_tensor.to(device=param.device, dtype=param.dtype))
+                loaded_count += 1
+            else:
+                if param.requires_grad:
+                    missing_trainable_params.append(name)
+
+        if missing_trainable_params:
+            logger.warning("="*60)
+            logger.warning(f"!!! WARNING: {len(missing_trainable_params)} trainable parameters were NOT loaded !!!")
+            logger.warning(f"Missing keys: {missing_trainable_params}")
+            logger.warning("This might lead to random performance if not intended.")
+            logger.warning("="*60)
+        else:
+            logger.info(f"Successfully loaded all {loaded_count} trainable parameters.")
     
     
 class ExtraLayerProbe(ProbeWrapper):
@@ -284,56 +347,6 @@ class ExtraLayerProbe(ProbeWrapper):
         hidden_states = self.norm(hidden_states)
         logits = self.classifier(hidden_states)
         return logits
-    
-    def save_pretrained_probe(self, save_directory: str, safe_serialization: bool = True, **kwargs):
-        state_dict = {}
-
-        for name, module in {
-            "probe": self.probe,
-            "proj": self.proj,
-            "norm": self.norm,
-            "classifier": self.classifier,
-        }.items():
-            for k, v in module.state_dict().items():
-                state_dict[f"{name}.{k}"] = v
-        
-        if safe_serialization:
-            from safetensors.torch import save_file
-            output_path = os.path.join(save_directory, "probe.safetensors")
-            save_file(state_dict, output_path, metadata={"format": "safetensors"})
-        else:
-            output_path = os.path.join(save_directory, "probe.bin")
-            torch.save(state_dict, output_path)
-
-        logger.info(f"Probe weights saved to {output_path}")
-    
-    def load_pretrained_probe(self, load_directory: str, **kwargs):
-        safetensors_path = os.path.join(load_directory, "probe.safetensors")
-        bin_path = os.path.join(load_directory, "probe.bin")
-
-        if os.path.exists(safetensors_path):
-            from safetensors.torch import load_file
-            state_dict = load_file(safetensors_path)
-            load_path = safetensors_path
-        elif os.path.exists(bin_path):
-            state_dict = torch.load(bin_path)
-            load_path = bin_path
-        else:
-            raise FileNotFoundError(f"Probe weights file not found in {load_directory}. Expected 'probe.safetensors' or 'probe.bin'.")
-
-        def extract(prefix):
-            return {
-                k[len(prefix) + 1:]: v
-                for k, v in state_dict.items()
-                if k.startswith(prefix + ".")
-            }
-
-        self.probe.load_state_dict(extract("probe"))
-        self.proj.load_state_dict(extract("proj"))
-        self.norm.load_state_dict(extract("norm"))
-        self.classifier.load_state_dict(extract("classifier"))
-        
-        logger.info(f"Probe weights loaded from {load_path}")
 
 class MultiLayerProbe(ProbeWrapper):
 
@@ -409,62 +422,6 @@ class MultiLayerProbe(ProbeWrapper):
         hidden_states = self.norms[-1](hidden_states)
         logits = self.classifier(hidden_states)
         return logits
-    
-    def save_pretrained_probe(self, save_directory: str, safe_serialization: bool = True, **kwargs):
-        state_dict = {}
-
-        for idx in range(self.config.num_hidden_layers):
-            for k, v in self.probes[idx].state_dict().items():
-                state_dict[f"probes.{idx}.{k}"] = v
-            for k, v in self.projs[idx].state_dict().items():
-                state_dict[f"projs.{idx}.{k}"] = v
-            for k, v in self.norms[idx].state_dict().items():
-                state_dict[f"norms.{idx}.{k}"] = v
-        
-        for k, v in self.norms[-1].state_dict().items():
-            state_dict[f"norms.{self.config.num_hidden_layers}.{k}"] = v
-
-        state_dict["classifier.weight"] = self.classifier.weight
-        state_dict["classifier.bias"] = self.classifier.bias
-        
-        if safe_serialization:
-            from safetensors.torch import save_file
-            output_path = os.path.join(save_directory, "probe.safetensors")
-            save_file(state_dict, output_path, metadata={"format": "safetensors"})
-        else:
-            output_path = os.path.join(save_directory, "probe.bin")
-            torch.save(state_dict, output_path)
-
-        logger.info(f"Probe weights saved to {output_path}")
-    
-    def load_pretrained_probe(self, load_directory: str, **kwargs):
-        safetensors_path = os.path.join(load_directory, "probe.safetensors")
-        bin_path = os.path.join(load_directory, "probe.bin")
-
-        if os.path.exists(safetensors_path):
-            from safetensors.torch import load_file
-            state_dict = load_file(safetensors_path)
-            load_path = safetensors_path
-        elif os.path.exists(bin_path):
-            state_dict = torch.load(bin_path)
-            load_path = bin_path
-        else:
-            raise FileNotFoundError(f"Probe weights file not found in {load_directory}. Expected 'probe.safetensors' or 'probe.bin'.")
-        
-        def extract(prefix):
-            return {
-                k[len(prefix) + 1:]: v
-                for k, v in state_dict.items()
-                if k.startswith(prefix + ".")
-            }
-        for idx in range(self.config.num_hidden_layers):
-            self.probes[idx].load_state_dict(extract(f"probes.{idx}"))
-            self.projs[idx].load_state_dict(extract(f"projs.{idx}"))
-            self.norms[idx].load_state_dict(extract(f"norms.{idx}"))
-        self.norms[-1].load_state_dict(extract(f"norms.{self.config.num_hidden_layers}"))
-        self.classifier.load_state_dict(extract("classifier"))
-        
-        logger.info(f"Probe weights loaded from {load_path}")
 
 class LoraProbe(ProbeWrapper):
 

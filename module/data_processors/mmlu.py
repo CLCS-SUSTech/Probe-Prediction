@@ -2,6 +2,7 @@ import os
 import re
 from datasets import load_dataset, DatasetDict
 from module.data import DataProcessor, register_processor
+import random
 
 @register_processor('mmlu')
 class MMLUDataProcessor(DataProcessor):
@@ -9,7 +10,7 @@ class MMLUDataProcessor(DataProcessor):
     def __init__(self, data_dir):
         super().__init__(data_dir)
 
-    def load_from_raw_dataset(self, train_limit=10000):
+    def load_from_raw_dataset(self, seed=42, train_limit=10000):
         dataset = load_dataset("bin957/mmlu_processed")
         trainset = dataset['train']
         data_names = list(set(trainset['data_name']))
@@ -19,6 +20,12 @@ class MMLUDataProcessor(DataProcessor):
             name_indices = [i for i, n in enumerate(trainset['data_name']) if n == name]
             selected_name_indices = name_indices[:avg]
             selected_indices.extend(selected_name_indices)
+        remain = train_limit - len(selected_indices)
+        if remain > 0:
+            # randomly select from the rest
+            rest_indices = [i for i in range(len(trainset)) if i not in selected_indices]
+            random.seed(seed)
+            selected_indices.extend(random.sample(rest_indices, remain))
         trainset = trainset.select(selected_indices)
         testset = dataset['test']
         self.dataset = DatasetDict({

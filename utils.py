@@ -9,6 +9,8 @@ def compute_metrics_cls(eval_pred: EvalPrediction | Tuple[np.ndarray, np.ndarray
     predictions_raw = predictions
     predictions_sigmoid = 1 / (1 + np.exp(-np.clip(predictions, -500, 500)))
     pred_labels = predictions_sigmoid > 0.5
+    labels = labels.astype(int)
+    pred_labels = pred_labels.astype(int)
     accuracy = (pred_labels == labels).mean().item()
     f1 = f1_score(labels, pred_labels, average='weighted')
     try:
@@ -32,3 +34,11 @@ def pass_k(c: int, k: int, n: int) -> float:
     except ValueError:
         return 0.0
     return float(1.0 - prob_no_success)
+
+if __name__ == "__main__":
+    # test compute_metrics_cls, predictions are in (0, 1) range, labels are also float in (0, 1)
+    preds = np.array([[0.8], [0.2], [0.6], [0.4]])
+    labels = np.array([[1.0], [0.0], [1.0], [0.0]])
+    eval_pred = (preds, labels)
+    metrics = compute_metrics_cls(eval_pred)
+    print("Metrics:", metrics)

@@ -5,7 +5,7 @@ import torch
 from transformers import AutoModelForCausalLM, Trainer, TrainingArguments, AutoTokenizer, PreTrainedTokenizer, TrainerCallback, TrainerState, TrainerControl
 import logging
 import argparse
-from utils import compute_metrics_cls
+from utils import compute_metrics_cls, compute_metrics_reg
 import os
 from typing import List
 from datasets import concatenate_datasets
@@ -170,7 +170,7 @@ def train(args):
         train_dataset=trainset,
         eval_dataset=testset,
         tokenizer=tokenizer,
-        compute_metrics=compute_metrics_cls,
+        compute_metrics=compute_metrics_reg,
         callbacks=[ProbeSaveCallback]
     )
 

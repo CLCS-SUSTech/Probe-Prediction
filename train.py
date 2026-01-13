@@ -1,6 +1,7 @@
 from module.probe import ProbeConfig, MultiLayerProbe
 from module.data import load_dataset_processor, DataProcessor
 from module.component import get_component_cls
+import contextlib
 import torch
 from transformers import AutoModelForCausalLM, Trainer, TrainingArguments, AutoTokenizer, PreTrainedTokenizer, TrainerCallback, TrainerState, TrainerControl
 import logging
@@ -28,29 +29,36 @@ logger = logging.getLogger(__name__)
 def tokenize_function(x, tokenizer: PreTrainedTokenizer):
     return tokenizer(x['prompt'], truncation=True, padding=True, max_length=4096)
 
+from transformers.modeling_utils import unwrap_model
 
 class ProbeSaveCallback(TrainerCallback):
-        def on_save(self, args, state: TrainerState, control: TrainerControl, model=None, **kwargs):
-            checkpoint_folder = os.path.join(args.output_dir, f"checkpoint-{state.global_step}")
-            
-            model_to_save = model
-            while hasattr(model_to_save, 'module') or hasattr(model_to_save, 'pre_grad_accum_config'):
-                model_to_save = getattr(model_to_save, 'module', model_to_save)
+    def _save_probe(self, args, state: TrainerState, control: TrainerControl, model=None, **kwargs):
+        checkpoint_folder = os.path.join(args.output_dir, f"checkpoint-{state.global_step}")
+        
+        model_to_save = unwrap_model(model)
 
-            params_to_gather = [p for p in model_to_save.parameters() if p.requires_grad]
+        params_to_gather = [p for p in model_to_save.parameters() if p.requires_grad]
 
-            gather_context = torch.utils.contextlib.nullcontext()
-            if HAS_DEEPSPEED and params_to_gather:
-                gather_context = deepspeed.gather_parameter(params_to_gather, modifier_rank=0)
+        gather_context = contextlib.nullcontext()
+        if HAS_DEEPSPEED and params_to_gather:
+            gather_context = deepspeed.zero.GatheredParameters(params_to_gather, modifier_rank=0)
 
-            with gather_context:
-                if args.process_index == 0:
-                    if hasattr(model_to_save, "save_pretrained_probe"):
-                        logger.info(f"[ProbeSaveCallback] Saving merged probe weights to {checkpoint_folder}...")
-                        model_to_save.save_pretrained_probe(checkpoint_folder)
-                    else:
-                        logger.warning("[ProbeSaveCallback] Model missing 'save_pretrained_probe' method.")
-            return control
+        with gather_context:
+            if args.process_index == 0:
+                if hasattr(model_to_save, "save_pretrained_probe"):
+                    logger.info(f"[ProbeSaveCallback] Saving merged probe weights to {checkpoint_folder}...")
+                    model_to_save.save_pretrained_probe(checkpoint_folder)
+                else:
+                    logger.warning("[ProbeSaveCallback] Model missing 'save_pretrained_probe' method.")
+
+    def on_step_end(self, args, state: TrainerState, control: TrainerControl, model=None, **kwargs):
+        if args.save_steps > 0 and state.global_step % args.save_steps == 0:
+            self._save_probe(args, state, control, model)
+        return control
+
+    def on_train_end(self, args, state: TrainerState, control: TrainerControl, model=None, **kwargs):
+        self._save_probe(args, state, control, model)
+        return control
 
 def train(args):
 
@@ -60,9 +68,7 @@ def train(args):
     if HAS_ACCELERATE:
         accelerator = Accelerator()
         is_main_process = accelerator.is_main_process
-        logger.info(f"Accelerator active. Distributed Status: {accelerator.distributed_type}")
     else:
-        logger.info("Accelerate not found. Using native PyTorch settings.")
         if torch.distributed.is_initialized():
             is_main_process = (torch.distributed.get_rank() == 0)
 
@@ -72,6 +78,11 @@ def train(args):
         level=logging.INFO if is_main_process else logging.WARN,
         handlers=[logging.StreamHandler(sys.stdout)],
     )
+
+    if HAS_ACCELERATE and accelerator is not None:
+        logger.info(f"Accelerator active. Distributed Status: {accelerator.distributed_type}")
+    else:
+        logger.info("Accelerate not found. Using native PyTorch settings.")
 
     from transformers import set_seed
     set_seed(args.seed)
@@ -83,7 +94,7 @@ def train(args):
         _attn_implementation=args.attn_implementation,
         low_cpu_mem_usage=True,
     )
-    base_model.require_grad_(False)
+    base_model.requires_grad_(False)
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
     if tokenizer.pad_token is None or base_model.config.pad_token_id is None:
@@ -109,20 +120,6 @@ def train(args):
         dataset_processor.load()
         trainset = dataset_processor.get('train').shuffle(seed=42)
         testset = dataset_processor.get('test')
-        if args.limit[0] > 0:
-            trainset.select(DataProcessor.label_balance(
-                trainset,
-                label_column='label',
-                positive_label_value=1.0,
-                limit=min(args.limit[0], len(trainset)),
-            ))
-        if args.limit[1] > 0:
-            testset.select(DataProcessor.label_balance(
-                testset,
-                label_column='label',
-                positive_label_value=1.0,
-                limit=min(args.limit[1], len(testset)),
-            ))
         trainset = trainset.remove_columns([col for col in trainset.column_names if col not in ['prompt', 'label']])
         testset = testset.remove_columns([col for col in testset.column_names if col not in ['prompt', 'label']])
         trainsets.append(trainset)
@@ -140,6 +137,12 @@ def train(args):
     trainset = trainset.map(lambda x: tokenize_function(x, tokenizer), batched=True)
     testset = testset.map(lambda x: tokenize_function(x, tokenizer), batched=True)
 
+    # Name 'label' will trigger unknown issues in Trainer
+    if 'label' in trainset.column_names:
+        trainset = trainset.rename_column("label", "labels")
+    if 'label' in testset.column_names:
+        testset = testset.rename_column("label", "labels")
+
     training_args = TrainingArguments(
         output_dir=os.path.join(args.work_dir, 'experiments', args.run_name, "model"),
         per_device_train_batch_size=4,
@@ -147,6 +150,7 @@ def train(args):
         eval_strategy='steps',
         eval_steps=100,
         save_steps=200,
+        save_strategy='no', # we use custom saving via callback
         save_total_limit=2,
         learning_rate=2e-4,
         weight_decay=0.01,
@@ -158,10 +162,10 @@ def train(args):
         logging_dir=os.path.join(args.work_dir, 'experiments', args.run_name, 'logs'),
         logging_steps=1,
         report_to=['swanlab'],
-        label_names=['label'],
+        label_names=['labels'],
         gradient_accumulation_steps=args.grad_accum_steps,
         run_name=args.run_name,
-        save_safetensors=False, # customize to only save probe weights
+        save_safetensors=True,
     )
 
     trainer = Trainer(
@@ -171,24 +175,28 @@ def train(args):
         eval_dataset=testset,
         tokenizer=tokenizer,
         compute_metrics=compute_metrics_reg,
-        callbacks=[ProbeSaveCallback]
+        callbacks=[ProbeSaveCallback],
     )
 
-    trainer.evaluate()
     trainer.train()
-    
-    if is_main_process:
-        logger.info("Saving final model...")
-        os.makedirs(os.path.join(args.work_dir, 'experiments', args.run_name, "model"), exist_ok=True)
-        output_dir = os.path.join(args.work_dir, 'experiments', args.run_name, "model")
-        
-        params_to_gather = [p for p in model.parameters() if p.requires_grad]
-        gather_context = torch.utils.contextlib.nullcontext()
-        if HAS_DEEPSPEED and params_to_gather:
-            gather_context = deepspeed.gather_parameter(params_to_gather, modifier_rank=0)
 
-        with gather_context:
+    import torch.distributed as dist
+    
+    logger.info("Saving final model...")
+    os.makedirs(os.path.join(args.work_dir, 'experiments', args.run_name, "model"), exist_ok=True)
+    output_dir = os.path.join(args.work_dir, 'experiments', args.run_name, "model")
+    
+    params_to_gather = [p for p in model.parameters() if p.requires_grad]
+    gather_context = contextlib.nullcontext()
+    if HAS_DEEPSPEED and params_to_gather:
+        logger.info("Using DeepSpeed to gather final probe parameters for saving.")
+        gather_context = deepspeed.zero.GatheredParameters(params_to_gather, modifier_rank=0)
+
+    with gather_context:
+        if is_main_process:
+            logger.info(f"Saving merged probe weights to {output_dir}...")
             model.save_pretrained(output_dir)
+    logger.info("Training complete.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -202,6 +210,6 @@ if __name__ == "__main__":
     parser.add_argument('--grad_accum_steps', type=int, default=8, help='Gradient accumulation steps')
     parser.add_argument('--run_name', type=str, default='probe-training', help='Run name for experiment')
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
-    parser.add_argument('--limit', type=List[int], default=[10000, -1], help='Limit number of samples for train and test sets')
+    # parser.add_argument('--limit', type=List[int], default=[10000, -1], help='Limit number of samples for train and test sets')
     args = parser.parse_args()
     train(args)

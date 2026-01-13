@@ -182,6 +182,8 @@ class ProbeWrapper(PreTrainedModel):
                     f'MSELoss requires labels in torch.float32, but got {labels.dtype}. Converting labels to float32.'
                 )
                 labels = labels.to(torch.float32)
+            if pooled_logits.dtype != torch.float32:
+                pooled_logits = pooled_logits.to(torch.float32)
             loss = self.loss_fn(pooled_logits, labels)
 
         return SequenceClassifierOutputWithPast(
@@ -192,14 +194,6 @@ class ProbeWrapper(PreTrainedModel):
     @abstractmethod
     def probe_forward(self, transformer_outputs: BaseModelOutputWithPast, *args, **kwargs) -> torch.Tensor:
         pass
-
-    @abstractmethod
-    def save_pretrained_probe(self, save_directory: str, safe_serialization: bool = True, **kwargs):
-        pass
-
-    @abstractmethod
-    def load_pretrained_probe(self, load_directory: str, **kwargs):
-        raise NotImplementedError("Please implement `load_pretrained_probe` method in the subclass of ProbeWrapper class.")
 
     def save_pretrained(
         self,
@@ -541,6 +535,8 @@ class LoraProbe(ProbeWrapper):
                     f'MSELoss requires labels in torch.float32, but got {labels.dtype}. Converting labels to float32.'
                 )
                 labels = labels.to(torch.float32)
+            if pooled_logits.dtype != torch.float32:
+                pooled_logits = pooled_logits.to(torch.float32)
             loss = self.loss_fn(pooled_logits, labels)
 
         return SequenceClassifierOutputWithPast(

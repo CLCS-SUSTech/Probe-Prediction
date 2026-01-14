@@ -10,7 +10,6 @@ class MBPPDataProcessor(DataProcessor):
 
     def __init__(self, data_dir):
         super().__init__(data_dir)
-        self.code_eval = hf_evaluate.load("code_eval")
         try:
             self.code_eval = hf_evaluate.load("code_eval")
         except Exception as e:

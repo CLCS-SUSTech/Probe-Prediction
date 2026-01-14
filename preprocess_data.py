@@ -1,5 +1,6 @@
 import argparse
 from module.data import DataProcessor, load_dataset_processor
+from transformers import AutoTokenizer
 import os
 import json
 
@@ -26,7 +27,7 @@ if __name__ == "__main__":
     default_n = config.get("default_n", 8)
     default_max_tokens = config.get("default_max_tokens", 512)
     default_stop_words = config.get("default_stop_words", ["\n\nQuestion", "\n\nQ:"])
-
+    default_system_prompt = config.get("default_system_prompt", "You are a helpful AI assistant.")
     os.makedirs(os.path.join(args.work_dir, "datasets"), exist_ok=True)
 
     for dataset in args.datasets:
@@ -61,6 +62,11 @@ if __name__ == "__main__":
                 max_tokens = config.get("datasets", {}).get(dataset, {}).get("max_tokens", default_max_tokens)
                 n = config.get("datasets", {}).get(dataset, {}).get("n", default_n)
                 stop_words = config.get("datasets", {}).get(dataset, {}).get("stop_words", default_stop_words)
+                apply_chat_template = config.get("datasets", {}).get(dataset, {}).get("apply_chat_template", False)
+                if apply_chat_template:
+                    system_prompt = config.get("datasets", {}).get(dataset, {}).get("system_prompt", default_system_prompt)
+                    tokenizer = AutoTokenizer.from_pretrained(args.model_name, revision=args.revision)
+                    processor.apply_chat_template(tokenizer=tokenizer, system_prompt=system_prompt)
                 processor.generate_answer(model=args.model_name, revision=args.revision, tensor_parallel_size=args.tensor_parallel_size, splits=to_process_splits, top_p=top_p, temperature=temperature, max_tokens=max_tokens, n=n, stop=stop_words)
                 processor.save(stage2_dir)
                 print(f"Stage 2 processing for dataset {dataset} completed and saved to {stage2_dir}.")

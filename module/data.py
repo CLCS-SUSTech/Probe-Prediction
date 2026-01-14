@@ -63,7 +63,30 @@ class DataProcessor(ABC):
 
         print(f"Dataset Information:")
         print(json.dumps(self.config, indent=4))
-    
+
+    def apply_chat_template(self, tokenizer, system_prompt: str = None):
+        assert self.dataset is not None, "Dataset is not loaded. Please load the dataset first."
+        def _formatting_func(example):
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            
+            messages.append({"role": "user", "content": example['prompt']})
+            try:
+                new_prompt = tokenizer.apply_chat_template(
+                    messages, 
+                    tokenize=False, 
+                    add_generation_prompt=True
+                )
+            except Exception as e:
+                warnings.warn(f"Failed to apply template: {e}")
+                new_prompt = example['prompt']
+                
+            return {"prompt": new_prompt}
+
+        for split in self.dataset:
+            self.dataset[split] = self.dataset[split].map(_formatting_func, load_from_cache_file=False)
+                
     @property
     def name(self):
         return self.config['name']

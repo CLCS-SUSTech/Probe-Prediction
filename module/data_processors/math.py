@@ -102,7 +102,6 @@ Output:
 """
         llm = LLM(model=model, tensor_parallel_size=tensor_parallel_size)
 
-        splits = self.dataset.keys()
         for split in splits:
             assert self.dataset is not None and "model_answer" in self.dataset[split].column_names, f"Model answers not found in the dataset split '{split}'. Please generate model answers before evaluation."
             dataset = self.dataset[split]

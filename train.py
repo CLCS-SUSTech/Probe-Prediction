@@ -151,8 +151,8 @@ def train(args):
 
     training_args = TrainingArguments(
         output_dir=os.path.join(args.work_dir, 'experiments', args.run_name, "model"),
-        per_device_train_batch_size=4,
-        per_device_eval_batch_size=4,
+        per_device_train_batch_size=args.batch_size,
+        per_device_eval_batch_size=args.batch_size,
         eval_strategy='steps',
         eval_steps=100,
         save_steps=200,
@@ -223,6 +223,7 @@ if __name__ == "__main__":
     parser.add_argument('--grad_accum_steps', type=int, default=8, help='Gradient accumulation steps')
     parser.add_argument('--run_name', type=str, default='probe-training', help='Run name for experiment')
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
+    parser.add_argument('--batch_size', type=int, default=4, help='Batch size per device')
     # parser.add_argument('--limit', type=List[int], default=[10000, -1], help='Limit number of samples for train and test sets')
     args = parser.parse_args()
     train(args)

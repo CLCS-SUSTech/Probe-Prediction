@@ -599,6 +599,11 @@ class LoraProbe(ProbeWrapper):
         else:
             raise FileNotFoundError(f"Classifier weights not found in {load_directory}. Expected 'classifier.safetensors' or 'classifier.bin'.")
 
-        self.classifier.load_state_dict(state_dict)
+        classifier_state_dict = {
+            "weight": state_dict["classifier.weight"],
+            "bias": state_dict["classifier.bias"]
+        }
+
+        self.classifier.load_state_dict(classifier_state_dict)
         
         logger.info(f"Probe weights loaded from {load_path}")

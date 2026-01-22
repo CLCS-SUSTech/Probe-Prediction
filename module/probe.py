@@ -233,11 +233,7 @@ class ProbeWrapper(PreTrainedModel):
         if pretrained_model is None or pretrained_model_components is None:
              raise ValueError("`from_pretrained` for ProbeWrapper requires external `pretrained_model` and `pretrained_model_components` instances.")
         config = cls.config_class.from_pretrained(pretrained_model_name_or_path, **kwargs)
-        probe_types = {
-            "multi_layer": MultiLayerProbe,
-            "extra_layer": ExtraLayerProbe,
-            "lora": LoraProbe,
-        }
+        probe_types = get_probe_types()
         if not hasattr(config, "probe_type"):
             config.probe_type = "multi_layer"
             logger.warning_once(f"`probe_type` not found in the config file. Defaulting to 'MultiLayer' probe.")

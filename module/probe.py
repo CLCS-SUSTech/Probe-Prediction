@@ -16,6 +16,14 @@ from peft.utils import set_peft_model_state_dict
 
 logger = logging.getLogger(__name__)
 
+def get_probe_types():
+    return {
+        "multi_layer": MultiLayerProbe,
+        "extra_layer": ExtraLayerProbe,
+        "lora": LoraProbe,
+        "linear": LinearProbe
+    }
+
 class BaseModelComponents(ABC):
 
     def get_decoder_layer(self) -> Type[nn.Module]:
@@ -607,3 +615,38 @@ class LoraProbe(ProbeWrapper):
         self.classifier.load_state_dict(classifier_state_dict)
         
         logger.info(f"Probe weights loaded from {load_path}")
+    
+class LinearProbe(ProbeWrapper):
+
+    def __init__(self, config: ProbeConfig, pretrained_model: PreTrainedModel, pretrained_model_components: BaseModelComponents):
+        super().__init__(config, pretrained_model, pretrained_model_components)
+        
+        self.projs = nn.ModuleList(
+            [
+                nn.Linear(self.pretrained_model.config.hidden_size, self.config.num_labels) \
+                for _ in range(self.config.num_hidden_layers)
+            ]
+        )
+        target_dtype = next(self.pretrained_model.parameters()).dtype
+        self.to(target_dtype)
+
+    def probe_forward(self, transformer_outputs, *args, **kwargs) -> torch.Tensor:
+        all_hidden_states = transformer_outputs.hidden_states
+        
+        total_layer_logits = 0
+        for layer_idx in range(self.config.num_hidden_layers):
+            hidden_states = all_hidden_states[layer_idx]
+            layer_logits = self.projs[layer_idx](hidden_states)
+            total_layer_logits += layer_logits
+        
+        avg_layer_logits = total_layer_logits / self.config.num_hidden_layers
+        cumsum_logits = torch.cumsum(avg_layer_logits, dim=1)
+        
+        seq_len = avg_layer_logits.size(1)
+        device = avg_layer_logits.device
+        time_steps = torch.arange(1, seq_len + 1, device=device).view(1, -1, 1)
+        cumulative_mean_logits = cumsum_logits / time_steps
+        
+        return cumulative_mean_logits
+
+    

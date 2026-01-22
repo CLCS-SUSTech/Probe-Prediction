@@ -1,4 +1,4 @@
-from module.probe import ProbeConfig, MultiLayerProbe, ExtraLayerProbe, LoraProbe
+from module.probe import ProbeConfig, get_probe_types
 from module.data import load_dataset_processor, DataProcessor
 from module.component import get_component_cls
 import contextlib
@@ -102,12 +102,8 @@ def train(args):
         base_model.config.pad_token_id = tokenizer.eos_token_id
     components = get_component_cls(args.component)()
     probe_cfg = ProbeConfig.from_json_file(args.probe_config)
-    probe_types = {
-        "multi_layer": MultiLayerProbe,
-        "extra_layer": ExtraLayerProbe,
-        "lora": LoraProbe,
-    }
-    probe_clz = probe_types.get(probe_cfg.probe_type, MultiLayerProbe)
+    probe_types = get_probe_types()
+    probe_clz = probe_types.get(probe_cfg.probe_type, probe_types['multi_layer'])
     model = probe_clz(probe_cfg, base_model, components)
 
     os.makedirs(os.path.join(args.work_dir, "datasets"), exist_ok=True)
@@ -170,6 +166,7 @@ def train(args):
         report_to=['swanlab'],
         label_names=['labels'],
         gradient_accumulation_steps=args.grad_accum_steps,
+        gradient_checkpointing=True,
         run_name=args.run_name,
         save_safetensors=True,
     )

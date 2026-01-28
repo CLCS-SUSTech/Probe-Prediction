@@ -1,0 +1,5 @@
+{
+    "probe_type": "linear",
+    "num_hidden_layers": 32,
+    "num_labels": 1
+}

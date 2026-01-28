@@ -1,0 +1,39 @@
+{
+    "default_top_p": 0.6,
+    "default_temperature": 0.6,
+    "default_k": 1,
+    "default_n": 8,
+    "default_max_tokens": 512,
+    "default_stop_words": ["\n\nQuestion", "\n\nQ:"],
+    "datasets": {
+        "math": {
+            "max_tokens": 2048,
+            "n": 8,
+            "stop_words": ["\n\nQuestion:", "\n\nQ:"]
+        },
+        "gsm8k": {
+            "max_tokens": 1024,
+            "n": 8,
+            "stop_words": ["\n\nQ:", "\n\nQuestion"]
+        },
+        "human_eval": {
+            "max_tokens": 1024,
+            "n": 8,
+            "stop_words": ["\nclass", "\ndef", "\n#", "\nif", "\nprint"]
+        },
+        "mbpp": {
+            "max_tokens": 1024,
+            "n": 8,
+            "stop_words": ["[DONE]"]
+        },
+        "mmlu": {
+            "n": 8,
+            "stop_words": ["\n\nQuestion", "\n\nQ:"]
+        },
+        "bbh": {
+            "max_tokens": 2048,
+            "n": 8,
+            "stop_words": ["\n\nQUESTION", "\n\nQ:", "\n\nQuestion"]
+        }
+    }
+}

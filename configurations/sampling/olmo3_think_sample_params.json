@@ -1,0 +1,57 @@
+{
+    "default_top_p": 0.6,
+    "default_temperature": 0.6,
+    "default_k": 1,
+    "default_n": 8,
+    "default_max_tokens": 512,
+    "default_stop_words": ["\n\nQuestion", "\n\nQ:"],
+    "default_system_prompt": "You are a helpful AI assistant.",
+    "datasets": {
+        "aime": {
+            "max_tokens": 32768,
+            "n": 16,
+            "stop_words": [],
+            "apply_chat_template": true
+        },
+        "gpqa": {
+            "max_tokens": 32768,
+            "n": 8,
+            "stop_words": [],
+            "apply_chat_template": true
+        },
+        "math": {
+            "max_tokens": 16384,
+            "n": 4,
+            "stop_words": ["\n\nQuestion:", "\n\nQ:"],
+            "apply_chat_template": true
+        },
+        "gsm8k": {
+            "max_tokens": 8192,
+            "n": 4,
+            "stop_words": ["\n\nQ:", "\n\nQuestion"],
+            "apply_chat_template": true
+        },
+        "human_eval": {
+            "max_tokens": 16384,
+            "n": 4,
+            "stop_words": ["\nclass", "\ndef", "\n#", "\nif", "\nprint"]
+        },
+        "mbpp": {
+            "max_tokens": 16384,
+            "n": 4,
+            "stop_words": ["[DONE]"]
+        },
+        "mmlu": {
+            "max_tokens": 8192,
+            "n": 4,
+            "stop_words": ["\n\nQuestion", "\n\nQ:"],
+            "apply_chat_template": true
+        },
+        "bbh": {
+            "max_tokens": 16384,
+            "n": 4,
+            "stop_words": ["\n\nQUESTION", "\n\nQ:", "\n\nQuestion"],
+            "apply_chat_template": true
+        }
+    }
+}
